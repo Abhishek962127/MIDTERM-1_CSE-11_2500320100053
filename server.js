@@ -1,119 +1,211 @@
-import express from "express"
-import { cache } from "react";
+import express from "express";
 
 const app = express();
 app.use(express.json());
 
-let books = [
-    {
-        id: 101,
-        title: "Java Programing ",
-        author: "Herbert Schildt",
-        category: "Programing",
-        quantity: 5,
-        available: 5
-    },
-];
-
-app.get("/api/books", (req, res) => {
-    res.status(200).json(books);
-});
-
-
+let books = [];
 
 app.post("/api/books", (req, res) => {
-    const { id, title, author, category, quantity, available } = req.body;
-    if (id === undefined ||title === undefined ||author === undefined ||category === undefined ||quantity === undefined ||available === undefined) {
-        return res.status(400).json({
-            message: "All fields are required"
-        });
-    }
+
+    const { id, title, author, category, quantity } = req.body || {};
+
     if (
-        typeof title !== "string" || !title.trim() ||
-        typeof author !== "string" || !author.trim() ||
-        typeof category !== "string" || !category.trim()
+        String(id ?? "").trim() === "" ||
+        ![title, author, category].every(
+            field => typeof field === "string" && field.trim()
+        ) ||
+        !Number.isInteger(quantity) || quantity <= 0
     ) {
         return res.status(400).json({
-            message: "Title, author and category must be valid strings"
+            message: "Invalid or missing book details"
         });
     }
 
-    const existingBook = books.find(
-        (b) => b.id === Number(id)
-    );
-
-    if (existingBook) {
+    if (books.some(book => String(book.id) === String(id))) {
         return res.status(409).json({
             message: "Book ID already exists"
         });
     }
 
-    const newBook = {
-        id: Number(id),
-        title: title.trim(),
-        author: author.trim(),
-        category: category.trim(),
-        quantity: Number(quantity),
-        available: Number(available)
+    const book = {
+        id,
+        title,
+        author,
+        category,
+        quantity,
+        available: quantity
     };
 
-    books.push(newBook);
+    books.push(book);
 
     res.status(201).json({
         message: "Book added successfully",
-        book: newBook
+        book
+    });
+});
+// Task 3
+app.get("/api/books", (req, res) => {
+
+    if (books.length === 0) {
+        return res.status(200).json({
+            message: "No books available"
+        });
+    }
+
+    res.status(200).json(books);
+});
+
+// Task 6
+app.get("/api/books/search", (req, res) => {
+
+    const query = req.query.query?.toLowerCase();
+
+    if (!query) {
+        return res.status(400).json({
+            message: "Search query is required"
+        });
+    }
+
+    const result = books.filter(book =>
+        book.title.toLowerCase().includes(query) ||
+        book.author.toLowerCase().includes(query) ||
+        book.category.toLowerCase().includes(query)
+    );
+
+    res.status(200).json(result);
+});
+
+
+// Task 4
+app.put("/api/books/:id", (req, res) => {
+
+    const book = books.find(
+        b => String(b.id) === req.params.id
+    );
+
+    if (!book) {
+        return res.status(404).json({
+            message: "Book not found"
+        });
+    }
+
+    const { id, title, author, category, quantity } = req.body || {};
+
+    if (id !== undefined) {
+        return res.status(400).json({
+            message: "Book ID cannot be changed"
+        });
+    }
+
+    if (
+        [title, author, category].some(
+            value => value !== undefined &&
+            (typeof value !== "string" || !value.trim())
+        ) ||
+        (quantity !== undefined &&
+            (!Number.isInteger(quantity) ||
+             quantity <= 0 ||
+             quantity < book.quantity - book.available))
+    ) {
+        return res.status(400).json({
+            message: "Invalid book details"
+        });
+    }
+
+    if (title !== undefined) book.title = title;
+    if (author !== undefined) book.author = author;
+    if (category !== undefined) book.category = category;
+
+    if (quantity !== undefined) {
+        const issued = book.quantity - book.available;
+        book.quantity = quantity;
+        book.available = quantity - issued;
+    }
+
+    res.status(200).json({
+        message: "Book updated successfully",
+        book
     });
 });
 
-app.get("/api/books/:id", (req, res) => {
-    try {
-        const id = Number(req.params.id);
+// Task 5
+app.delete("/api/books/:id", (req, res) => {
 
-        const book = books.find((b) => b.id === id);
+    const index = books.findIndex(
+        book => String(book.id) === req.params.id
+    );
 
-        if (!book) {
-            return res.status(404).json({
-                message: "Book not found"
-            });
-        }
-
-        res.status(200).json(book);
-    }
-    catch (error) {
-        res.status(400).json({
-            message: error,
+    if (index === -1) {
+        return res.status(404).json({
+            message: "Book not found"
         });
     }
+
+    books.splice(index, 1);
+
+    res.status(200).json({
+        message: "Book deleted successfully"
+    });
 });
 
-app.put("/api/books/:id", (req, res) => {
-    try {
-        const id = Number(req.params.id);
-
-        const book = books.find((b) => b.id === id);
-
-        if (!book) {
-            return res.status(404).json({
-                message: "Book not found"
-            });
-        }
-        const { quantity } = req.body;
 
 
-        book.quantity = quantity;
+app.get("/api/books/search", (req, res) => {
 
-        res.status(200).json({
-            message: "Book updated successfully",
-            book: book
+    const query = req.query.q;
+
+    if (!query) {
+        return res.status(400).json({
+            message: "Search query is required"
         });
     }
-    catch (error) {
-        res.status(400).json({
-            message: error,
+
+    const search = query.toLowerCase();
+
+    const result = books.filter((b) =>
+        b.title.toLowerCase().includes(search) ||
+        b.author.toLowerCase().includes(search) ||
+        b.category.toLowerCase().includes(search)
+    );
+
+    if (result.length === 0) {
+        return res.status(404).json({
+            message: "No books found"
         });
     }
+
+    res.status(200).json(result);
+
 });
 
+app.post("/books/:id/issue", (req, res) => {
+
+    const id = Number(req.params.id);
+
+    const book = books.find((b) => b.id === id);
+
+    if (!book) {
+        return res.status(404).json({
+            message: "Book not found"
+        });
+    }
+
+  
+    if (book.available <= 0) {
+        return res.status(400).json({
+            message: "No copies available"
+        });
+    }
+
+
+    book.available -= 1;
+
+    res.status(200).json({
+        message: "Book issued successfully",
+        book: book
+    });
+
+});
 
 const PORT = 3000;
 
